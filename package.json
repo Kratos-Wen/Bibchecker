@@ -6,11 +6,11 @@
   "publisher": "Kratos-Wen",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/bibcheck"
+    "url": "https://github.com/Kratos-Wen/Bibchecker.git"
   },
-  "homepage": "https://github.com/your-username/bibcheck/blob/main/README.md",
+  "homepage": "https://github.com/Kratos-Wen/Bibchecker/blob/main/README.md",
   "bugs": {
-    "url": "https://github.com/your-username/bibcheck/issues"
+    "url": "https://github.com/Kratos-Wen/Bibchecker/issues"
   },
   "license": "MIT",
   "engines": {
