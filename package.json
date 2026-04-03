@@ -1,0 +1,123 @@
+{
+  "name": "bibcheck",
+  "displayName": "BibCheck",
+  "description": "BibCheck is a VS Code extension and CLI tool that verifies and corrects BibTeX entries using DBLP, Crossref, and OpenAlex with publication-grade validation.",
+  "version": "0.1.0",
+  "publisher": "Kratos-Wen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/bibcheck"
+  },
+  "homepage": "https://github.com/your-username/bibcheck/blob/main/README.md",
+  "bugs": {
+    "url": "https://github.com/your-username/bibcheck/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=16.0.0"
+  },
+  "categories": ["Other", "Data Science", "Linters"],
+  "keywords": [
+    "bibtex",
+    "bibliography",
+    "citation",
+    "academic",
+    "dblp",
+    "crossref",
+    "openalex",
+    "publication"
+  ],
+  "extensionKind": ["workspace"],
+  "activationEvents": [
+    "onCommand:bibtexRefiner.refineBibtex",
+    "onCommand:bibtexRefiner.refineActiveBibtex",
+    "onCommand:bibtexRefiner.refineWorkspaceBibtex",
+    "onCommand:bibtexRefiner.refineFolderBibtex"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bibtexRefiner.refineBibtex",
+        "title": "BibCheck: Verify BibTeX File"
+      },
+      {
+        "command": "bibtexRefiner.refineActiveBibtex",
+        "title": "BibCheck: Verify Active BibTeX File"
+      },
+      {
+        "command": "bibtexRefiner.refineWorkspaceBibtex",
+        "title": "BibCheck: Scan and Verify All Workspace BibTeX Files"
+      },
+      {
+        "command": "bibtexRefiner.refineFolderBibtex",
+        "title": "BibCheck: Scan and Verify Folder BibTeX Files"
+      }
+    ],
+    "configuration": {
+      "title": "BibCheck",
+      "properties": {
+        "bibtexRefiner.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python executable used to run bibtex_refiner.py."
+        },
+        "bibtexRefiner.scriptPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to bibtex_refiner.py. Leave empty to use the bundled script in the workspace root."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "bibtexRefiner.refineBibtex"
+        },
+        {
+          "command": "bibtexRefiner.refineWorkspaceBibtex"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bibtexRefiner.refineActiveBibtex",
+          "when": "resourceExtname == .bib",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "bibtexRefiner.refineActiveBibtex",
+          "when": "resourceExtname == .bib",
+          "group": "navigation@99"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "bibtexRefiner.refineActiveBibtex",
+          "when": "explorerResourceIsFolder == false && resourceExtname == .bib",
+          "group": "navigation@99"
+        },
+        {
+          "command": "bibtexRefiner.refineFolderBibtex",
+          "when": "explorerResourceIsFolder == true",
+          "group": "navigation@99"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5",
+    "@vscode/vsce": "^3.6.2"
+  }
+}
