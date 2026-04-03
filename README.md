@@ -63,6 +63,8 @@ npm run compile
 
 ## Command Line Usage
 
+By default, BibCheck overwrites the input `.bib` file unless you provide `-o`.
+
 ### Verify a BibTeX file in place
 
 ```bash
@@ -91,6 +93,26 @@ python bibtex_refiner.py refs.bib --report report.json
 
 ```bash
 python bibtex_refiner.py refs.bib --verbose
+```
+
+### Interactive mode (recommended for manual runs)
+
+Interactive mode asks before writing changes and lets users choose output behavior.
+
+```bash
+python bibtex_refiner.py refs.bib --interactive
+```
+
+Interactive prompts include:
+- overwrite input file or write to a new output path
+- rewrite citation keys or keep original keys
+- force canonical fields or use conservative merge
+- show progress or run quietly
+
+### Disable progress output
+
+```bash
+python bibtex_refiner.py refs.bib --no-progress
 ```
 
 ## VS Code Usage

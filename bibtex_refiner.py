@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -690,13 +691,42 @@ def dump_bibtex(path: Path, db: bibtexparser.bibdatabase.BibDatabase) -> None:
         fh.write(writer.write(db))
 
 
-def process_file(input_path: Path, output_path: Path, force: bool = False, rewrite_keys: bool = False) -> List[ResolutionResult]:
+def process_file(
+    input_path: Path,
+    output_path: Path,
+    force: bool = False,
+    rewrite_keys: bool = False,
+    show_progress: bool = True,
+) -> List[ResolutionResult]:
     db = load_bibtex(input_path)
     resolver = BibliographicResolver()
     results: List[ResolutionResult] = []
     used_keys = {entry.get("ID", "") for entry in db.entries if entry.get("ID")}
+    total = len(db.entries)
+    start_ts = time.monotonic()
+    is_tty = sys.stderr.isatty()
+    # Keep progress output user-friendly: interactive terminals get one-line updates,
+    # non-interactive runs only get a few milestones.
+    line_interval = max(1, total // 20) if total else 1
 
-    for entry in db.entries:
+    def emit_progress(current: int, final: bool = False) -> None:
+        if not show_progress or total == 0:
+            return
+        elapsed = time.monotonic() - start_ts
+        rate = (current / elapsed) if elapsed > 0 else 0.0
+        remaining = max(0, total - current)
+        eta = (remaining / rate) if rate > 0 else 0.0
+        pct = (current / total) * 100.0
+        message = (
+            f"[BibCheck] {current}/{total} ({pct:5.1f}%) "
+            f"elapsed {elapsed:5.1f}s eta {eta:5.1f}s rate {rate:4.2f}/s"
+        )
+        if is_tty and not final:
+            print(f"\r{message}", end="", file=sys.stderr, flush=True)
+        else:
+            print(message, file=sys.stderr, flush=True)
+
+    for idx, entry in enumerate(db.entries, start=1):
         result = resolver.resolve_entry(entry, force=force, rewrite_keys=rewrite_keys)
         if rewrite_keys:
             desired = result.resolved_key or result.key
@@ -713,8 +743,51 @@ def process_file(input_path: Path, output_path: Path, force: bool = False, rewri
             entry.update(result.resolved)
             entry["ID"] = result.resolved_key or result.key
 
+        if show_progress:
+            if is_tty:
+                # Smooth one-line progress in interactive terminal.
+                if idx == total or idx % line_interval == 0:
+                    emit_progress(idx, final=(idx == total))
+            else:
+                # CI/log files: avoid noisy output.
+                milestone_hit = idx in {
+                    max(1, total // 4),
+                    max(1, total // 2),
+                    max(1, (total * 3) // 4),
+                    total,
+                }
+                if milestone_hit:
+                    emit_progress(idx, final=(idx == total))
+
+    if show_progress and total and is_tty:
+        # Final newline after carriage-return updates.
+        print("", file=sys.stderr)
+
     dump_bibtex(output_path, db)
     return results
+
+
+def print_cli_summary(results: List[ResolutionResult], output_path: Path, report_path: Optional[Path] = None) -> None:
+    total = len(results)
+    changed_results = [r for r in results if r.changed]
+    changed = len(changed_results)
+    low_conf = sum(1 for r in results if r.confidence < 0.80)
+
+    print("\nBibCheck completed")
+    print(f"- Entries processed: {total}")
+    print(f"- Entries updated: {changed}")
+    print(f"- Output file: {output_path}")
+
+    if changed_results:
+        preview = ", ".join((r.resolved_key or r.key) for r in changed_results[:5])
+        suffix = " ..." if changed > 5 else ""
+        print(f"- Updated keys: {preview}{suffix}")
+
+    if low_conf:
+        print(f"- Low-confidence entries: {low_conf} (use --report for details)")
+
+    if report_path:
+        print(f"- Report file: {report_path}")
 
 
 def build_report(results: List[ResolutionResult]) -> Dict[str, Any]:
@@ -782,23 +855,97 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--report", type=Path, help="Write a JSON report with per-entry decisions")
     parser.add_argument("--force", action="store_true", help="Replace fields using the best candidate even when merging is conservative")
     parser.add_argument("--rewrite-keys", action="store_true", help="Rewrite cite keys to canonical author-year-title keys")
+    parser.add_argument("--interactive", action="store_true", help="Ask for confirmation/options before writing changes")
+    parser.add_argument("--no-progress", action="store_true", help="Disable progress output while processing entries")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     return parser.parse_args(argv)
 
 
+def _prompt_yes_no(question: str, default: bool = True) -> bool:
+    prompt = "[Y/n]" if default else "[y/N]"
+    while True:
+        raw = input(f"{question} {prompt} ").strip().lower()
+        if not raw:
+            return default
+        if raw in {"y", "yes"}:
+            return True
+        if raw in {"n", "no"}:
+            return False
+        print("Please answer 'y' or 'n'.")
+
+
+def _collect_interactive_options(args: argparse.Namespace, input_path: Path) -> Tuple[Path, bool, bool, bool]:
+    output_path = (args.output or args.input).resolve()
+    rewrite_keys = bool(args.rewrite_keys)
+    force = bool(args.force)
+    show_progress = not args.no_progress
+
+    print("BibCheck interactive mode")
+    print(f"Input file: {input_path}")
+
+    if args.output is None:
+        overwrite = _prompt_yes_no("Overwrite the input file?", default=False)
+        if overwrite:
+            output_path = input_path
+        else:
+            suggested = str(input_path.with_suffix(".refined.bib"))
+            while True:
+                raw = input(f"Output file path [{suggested}]: ").strip()
+                chosen = raw or suggested
+                candidate = Path(chosen).expanduser().resolve()
+                if candidate == input_path:
+                    print("Output path equals input path. Choose a different file or overwrite the input.")
+                    continue
+                output_path = candidate
+                break
+    else:
+        print(f"Output file: {output_path}")
+
+    if not args.rewrite_keys:
+        rewrite_keys = _prompt_yes_no("Rewrite citation keys?", default=False)
+    if not args.force:
+        force = _prompt_yes_no("Force canonical fields even if conservative merge would skip them?", default=False)
+    if not args.no_progress:
+        show_progress = _prompt_yes_no("Show progress while processing?", default=True)
+
+    print("\nSelected options:")
+    print(f"- output: {output_path}")
+    print(f"- rewrite keys: {'yes' if rewrite_keys else 'no'}")
+    print(f"- force mode: {'yes' if force else 'no'}")
+    print(f"- progress: {'yes' if show_progress else 'no'}")
+    print("")
+
+    return output_path, rewrite_keys, force, show_progress
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s: %(message)s")
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING, format="%(levelname)s: %(message)s")
 
     input_path = args.input.resolve()
     output_path = (args.output or args.input).resolve()
+    rewrite_keys = bool(args.rewrite_keys)
+    force = bool(args.force)
+    show_progress = not args.no_progress
 
     if not input_path.exists():
         LOGGER.error("Input file does not exist: %s", input_path)
         return 1
 
+    if args.interactive:
+        if not sys.stdin.isatty():
+            LOGGER.error("--interactive requires a terminal (TTY).")
+            return 1
+        output_path, rewrite_keys, force, show_progress = _collect_interactive_options(args, input_path)
+
     try:
-        results = process_file(input_path, output_path, force=args.force, rewrite_keys=args.rewrite_keys)
+        results = process_file(
+            input_path,
+            output_path,
+            force=force,
+            rewrite_keys=rewrite_keys,
+            show_progress=show_progress,
+        )
     except Exception as exc:
         LOGGER.exception("Failed to process BibTeX file: %s", exc)
         return 2
@@ -807,11 +954,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report = build_report(results)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    changed = sum(1 for r in results if r.changed)
-    LOGGER.info("Processed %d entries; updated %d entries.", len(results), changed)
-    LOGGER.info("Wrote %s", output_path)
-    if args.report:
-        LOGGER.info("Wrote report %s", args.report.resolve())
+    print_cli_summary(results, output_path, args.report.resolve() if args.report else None)
     return 0
 
 
