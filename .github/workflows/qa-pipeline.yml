@@ -10,6 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: true
       matrix:
         python-version: ['3.10', '3.11', '3.12']
 
@@ -42,8 +43,8 @@ jobs:
 
       - name: Lint with flake8
         run: |
-          flake8 bibtex_refiner.py generate_report.py --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 bibtex_refiner.py generate_report.py --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+          flake8 bibtex_refiner.py enhanced_entry_type_validator.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 bibtex_refiner.py enhanced_entry_type_validator.py --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
 
   integration:
     runs-on: ubuntu-latest
@@ -87,10 +88,6 @@ jobs:
         run: |
           python bibtex_refiner.py test_sample.bib -o test_sample.refined.bib --report test_sample.report.json || true
 
-      - name: Generate HTML report
-        run: |
-          python generate_report.py test_sample.report.json test_sample_report.html || true
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -99,7 +96,6 @@ jobs:
           path: |
             test_sample.refined.bib
             test_sample.report.json
-            test_sample_report.html
 
   extension-build:
     runs-on: windows-latest
